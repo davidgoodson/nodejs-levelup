@@ -1,178 +1,70 @@
-require("dotenv").config();
-const Joi = require("joi");
 const express = require("express");
-const User = require("../models/users");
-const bcryp = require("bcrypt");
-const jwt = require("jsonwebtoken");
+const router = require("express-promise-router")();
+const passport = require("passport");
+const passportConf = require("../passport");
 
-var router = express.Router();
-router.use(express.json());
+const {
+  validateSignup,
+  validateLogin,
+  authenticate
+} = require("../helpers/routeHelper");
 
-router.post("/signup", (req, res) => {
-  const { error } = validitateParams(req.body);
-  if (error) return res.status(400).send(error.details[0].message);
+const UserController = require("../controllers/users");
 
-  User.findOne({ where: { username: req.body.username } }).then(user => {
-    //console.log(user);
-    if (user)
-      return res.status(200).json({
-        message: "Username exists, choose another username!"
-      });
-    else {
-      bcryp.hash(req.body.password, saltRounds, (err, hash) => {
-        if (err) return res.status(400).send("Invalid Password!");
-        else {
-          const user = User.build({
-            firstName: req.body.firstname,
-            otherName: req.body.othername,
-            username: req.body.username,
-            password: hash,
-            email: req.body.email,
-            userlevel: req.body.userlevel
-          })
-            .save()
-            .then(saved => {
-              res.status(200).send(JSON.stringify(saved));
-            })
-            .catch(error => {
-              res.status(400).send(error.errors[0]);
-            });
-        }
-      });
+router.route("/signup").post(validateSignup(), UserController.signup);
+
+router.route("/login/local").post(validateLogin(), UserController.login);
+
+//Login with google, for front end purposes, use the oauth/google/callback below for backend and configure as instructed
+router.route("/oauth/login/google").get(
+  (req, res, next) => {
+    if (req.query.return) {
+      req.session.oauth2return = req.query.return;
     }
-  });
-  const saltRounds = 10;
-});
+    next();
+  },
 
-router.post("/login", (req, res) => {
-  const schema = {
-    username: Joi.string()
-      .min(5)
-      .required(),
-    password: Joi.string()
-      .min(6)
-      .required()
-  };
-  const { error } = Joi.validate(req.body, schema);
-  if (error) res.status(400).send(error.details[0].message);
+  // Start OAuth 2 flow using Passport.js
+  passport.authenticate("googleOAuth", { scope: ["email", "profile"] })
+);
 
-  User.findOne({ where: { username: req.body.username } })
-    .then(user => {
-      // console.log("Login User: ", user);
-      if (user)
-        bcryp.compare(
-          req.body.password,
-          user.dataValues.password,
-          (err, result) => {
-            if (err)
-              return res
-                .status(401)
-                .json({ message: "Authentication failed!" });
-            if (result) {
-              const token = jwt.sign(
-                {
-                  uid: user.dataValues.uid,
-                  email: user.dataValues.email
-                },
-                process.env.JWT_TOKEN,
-                { expiresIn: "5m" }
-              );
-              return res.status(200).json({ auth: true, token: token });
-            } else {
-              return res.status(401).json({ message: "Invalid Password!" });
-            }
-          }
-        );
-      else return res.status(404).json({ message: "Invalid Username!" });
-    })
-    .catch(error => {
-      console.log("Error while loging in: ", error);
-    });
-});
+//Call Back to google, to Work for Backend POSTMAN Testing, Configure method to POST so that you can provide body of access-token
+router
+  .route("/oauth/google/callback")
+  .get(
+    passport.authenticate("googleOAuth", { session: false }),
+    UserController.OAuth
+  );
 
-authenticate = (req, res, next) => {
-  const header = req.headers["authorization"];
-  let token;
-
-  if (!header) return res.status(401).json({ message: "No token specified!" });
-
-  if (header.startsWith("Bearer ")) token = header.split(" ")[1];
-  else
-    return res
-      .status(401)
-      .json({ message: "Provided token is in an invalid format!" });
-
-  jwt.verify(token, process.env.JWT_TOKEN, (err, decoded) => {
-    if (err) {
-      // console.log("Token verification error", err);
-      return res.status(500).json({ message: "Provided token is invalid!" });
-    } else {
-      req.uid = decoded.uid;
-      next();
+//Login with facebook, for front end purposes, use the oauth/facebook/callback below for backend and configure as instructed
+router.route("/oauth/login/facebook").get(
+  (req, res, next) => {
+    if (req.query.return) {
+      req.session.oauth2return = req.query.return;
     }
-  });
-};
+    next();
+  },
 
-router.get("/users", authenticate, (req, res) => {
-  User.findOne({ where: { uid: req.uid } }).then(user => {
-    if (!user) {
-      return res.status(401).json({
-        message: "Access denied!"
-      });
-    } else {
-      if (user.userlevel < 3)
-        return res.status(400).json({
-          message: "You do not have multiple users view permissions!"
-        });
-      else {
-        User.findAll()
-          .then(users => {
-            res.status(200).send(users);
-          })
-          .catch(error => {
-            console.log("Terrible Error", error);
-            res.status(400).json({ message: "Failed to fetch Users!" });
-          });
-      }
-    }
-  });
-});
+  // Start OAuth 2 flow using Passport.js
+  passport.authenticate("facebookOAuth")
+);
 
-router.get("/users/:id", (req, res) => {
-  const { error } = validitateParams(req.params);
-  if (error) return res.status(400).send(error.details[0].message);
-  User.findByPk(req.params.id)
-    .then(users => {
-      res.status(200).send(JSON.stringify(users));
-    })
-    .catch(error => {
-      res.status(400).send(error.errors[0]);
-    });
-});
+//Call Back to facebook, to Work for Backend POSTMAN Testing, Configure method to POST so that you can provide body of access-token
+router
+  .route("/oauth/facebook/callback")
+  .get(
+    passport.authenticate("facebookOAuth", { session: false }),
+    UserController.OAuth
+  );
 
-function validitateParams(params) {
-  const schema = {
-    firstname: Joi.string()
-      .min(3)
-      .required(),
-    othername: Joi.string()
-      .min(3)
-      .required(),
-    password: Joi.string()
-      .min(5)
-      .required(),
-    email: Joi.string()
-      .min(10)
-      .required(),
-    username: Joi.string()
-      .min(5)
-      .required(),
-    userlevel: Joi.string()
-      .min(1)
-      .max(1)
-      .required()
-  };
-  return Joi.validate(params, schema);
-}
+//View all Users
+router
+  .route("/users")
+  .get(
+    passport.authenticate("bearer", { session: false }),
+    UserController.viewUsers
+  );
+
+router.route("/users/:id").post(authenticate, UserController.singleUser);
 
 module.exports = router;

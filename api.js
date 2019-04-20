@@ -1,9 +1,10 @@
-require("dotenv").config();
 const express = require("express");
-const users = require("./routes/users");
+const profiles = require("./routes/users");
+const bodyParser = require("body-parser");
 const app = express();
 
-app.use("/api/profiles", users);
+app.use(bodyParser.json());
+app.use("/api/profiles", profiles);
 
 const port = process.env.PORT || 5000;
 

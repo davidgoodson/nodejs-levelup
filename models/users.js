@@ -1,16 +1,18 @@
 const Sequelize = require("sequelize");
+const bcryp = require("bcrypt");
+const sequelize = require("../config/db");
 
-const sequelize = require("./db");
-
-class User extends Sequelize.Model {
-  set firstName(val) {
-    this.setDataValue("firstName", toTitleCase(val));
-  }
-}
+class User extends Sequelize.Model {}
 
 User.init(
   {
     uid: { type: Sequelize.INTEGER, autoIncrement: true, primaryKey: true },
+    oauthid: { type: Sequelize.STRING, allowNull: true },
+    method: { type: Sequelize.STRING, allowNull: false },
+    displayName: {
+      type: Sequelize.STRING,
+      allowNull: false
+    },
     firstName: { type: Sequelize.STRING, alloNull: false },
     otherName: {
       type: Sequelize.STRING,
@@ -20,10 +22,15 @@ User.init(
       },
       validate: { is: ["^[a-z]+$", "i"] }
     },
-    email: { type: Sequelize.STRING, allowNull: false },
     username: { type: Sequelize.STRING, allowNull: false, unique: true },
-    password: { type: Sequelize.STRING, allowNull: false },
-    userlevel: { type: Sequelize.INTEGER, allowNull: false }
+    password: {
+      type: Sequelize.STRING,
+      allowNull: true,
+      set(val) {
+        if (val) this.setDataValue("password", bcryp.hashSync(val, 10));
+      }
+    },
+    userlevel: { type: Sequelize.INTEGER, allowNull: true, defaultValue: 4 }
   },
   { sequelize }
 );
@@ -37,39 +44,5 @@ function toTitleCase(str) {
     return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
   });
 }
-
-// User.create({
-//   firstName: "kuteesa",
-//   otherName: "pAul",
-//   sex: "Male",
-//   dateOfBirth: "1988-03-03"
-// });
-
-// const user = User.build({
-//   firstName: "Buyinza",
-//   otherName: "David",
-//   sex: "Female",
-//   dateOfBirth: "1988/03/03",
-//   email: "sara.mirembe@gmail.com"
-// });
-
-// user
-//   .save()
-//   .then(() => {
-//     console.log("User Successfully Saved");
-//   })
-//   .catch(error => {
-//     console.log("An Error Happened While Inserting", error.errors[0]);
-//   });
-
-// console.log(
-//   User.findAll()
-//     .then(user => {
-//       console.log(JSON.stringify(user));
-//     })
-//     .catch(error => {
-//       console.log("This Error Happened", error);
-//     })
-// );
 
 module.exports = User;
